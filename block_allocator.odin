@@ -86,6 +86,9 @@ block_allocator_destroy :: proc(allocator: ^Block_Allocator) {
 }
 
 block_alloc :: proc(allocator: ^Block_Allocator, size: u32) -> (alloc: Block_Allocation, ok: bool) {
+	// User error, return
+	if size == 0 { return {}, false }
+
 	// Get the indices of the bin that this size fits into
 	index, top_index, bottom_index := size_to_bin_index(size)
 
@@ -153,6 +156,9 @@ block_alloc :: proc(allocator: ^Block_Allocator, size: u32) -> (alloc: Block_All
 }
 
 block_free :: proc(allocator: ^Block_Allocator, alloc: Block_Allocation) {
+	// User error, just return
+	if alloc.size == 0 { return }
+
 	// Free the backing entry for the block, and get its data
 	// There's no need to remove it, since it's allocated, so not part of any bin lists
 	block := allocator.blocks[alloc.metadata]

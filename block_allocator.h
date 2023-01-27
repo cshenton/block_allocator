@@ -165,6 +165,7 @@ void block_allocator_destroy(block_allocator_t *allocator) {
 }
 
 int block_allocator_alloc(block_allocator_t *allocator, uint32_t size, block_allocator_allocation_t *out_alloc) {
+        if (size == 0) { return BLOCK_ALLOCATOR_OUT_OF_MEMORY; }
         uint32_t top_index, bottom_index;
         uint32_t index = block_allocator_size_to_bin_index(size, &top_index, &bottom_index);
         uint8_t bigger_bottoms;
@@ -206,6 +207,7 @@ int block_allocator_alloc(block_allocator_t *allocator, uint32_t size, block_all
 }
 
 void block_allocator_free(block_allocator_t *allocator, block_allocator_allocation_t *alloc) {
+        if (alloc->size == 0) { return; }
         block_allocator_block_t block = allocator->blocks[alloc->metadata];
         allocator->free_offset -= 1;
         allocator->free_blocks[allocator->free_offset] = alloc->metadata;
