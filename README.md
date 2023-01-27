@@ -28,4 +28,11 @@ block_allocator_allocation_t alloc;
 int res = block_allocator_alloc(&allocator, size, &alloc);
 assert(ok == BLOCK_ALLOCATOR_SUCCESS);
 block_allocator_free(&allocator, &alloc);
+block_allocator_destroy(&allocator);
 ```
+
+## Visualising Heap Fragmentation
+
+I also provide `block_allocator_head` and `block_allocator_next` functions, which can be used to traverse the heap in
+memory order. This is useful for building visualisations of heap fragmentation, in conjuction with `block_allocator_is_used`
+to determine if a memory blcok is currently allocated or available.
