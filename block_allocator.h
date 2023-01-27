@@ -1,5 +1,29 @@
 #ifndef BLOCK_ALLOCATOR_H
 #define BLOCK_ALLOCATOR_H
+// MIT License
+
+// Copyright (c) 2023 Charlie Shenton
+
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+// Allocator based on Sebastian Aaltonen's Offset Allocator: 
+// https://github.com/sebbbi/OffsetAllocator/blob/main/offsetAllocator.cpp
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -22,6 +46,7 @@ typedef struct block_allocator_t {
         uint8_t bottom_bins[32]; // Which if the bottom linear bins are resident in each top bins
         uint32_t bin_lists[256]; // Start index for the linked-list of blocks in each bin
         block_allocator_block_t *blocks; // Pre-allocated array of block information
+        uint32_t head_block; // Index of the block at the start of the memory heap
         uint32_t *free_blocks; // Free list of blocks
         uint32_t free_offset; // Current free list start index 
 } block_allocator_t;
@@ -44,6 +69,16 @@ int block_allocator_alloc(block_allocator_t *allocator, uint32_t size, block_all
 // Frees the byte range associated with this alloc
 void block_allocator_free(block_allocator_t *allocator, block_allocator_allocation_t *alloc);
 
+// Get the block at the start of the memory heap, useful for traversing to render heap fragmentation
+void block_allocator_head(block_allocator_t *allocator, block_allocator_block_t *out_block);
+
+// Get the next block in memory after this one, useful for traversing to render heap fragmentation.
+// Returns BLOCK_ALLOCATOR_OUT_OF_MEMORY if we're at the end of the heap.
+int block_allocator_next(block_allocator_t *allocator, block_allocator_block_t *block, block_allocator_block_t *out_block);
+
+// Indicates whether a memory block is currently allocated, useful for traversing to render heap fragmentation
+int block_allocator_is_used(block_allocator_block_t *block);
+
 #ifdef BLOCK_ALLOCATOR_IMPL
 
 #define BLOCK_ALLOCATOR_UNUSED 0xffffffff // Sentinel value used to denote the ends of linked lists
@@ -62,11 +97,11 @@ int block_allocator_is_used(block_allocator_block_t *block) {
 }
 
 int block_allocator_insert(block_allocator_t *allocator, uint32_t offset, uint32_t size, uint32_t mem_prev, uint32_t mem_next) {
+        if (allocator->free_offset == BLOCK_ALLOCATOR_MAX_ALLOCS) { return BLOCK_ALLOCATOR_OUT_OF_MEMORY; }
         uint32_t top_index, bottom_index;
         uint32_t index = block_allocator_size_to_bin_index(size, &top_index, &bottom_index);
         allocator->top_bins |= (1 << top_index);
         allocator->bottom_bins[top_index] |= (1 << bottom_index);
-        if (allocator->free_offset == BLOCK_ALLOCATOR_MAX_ALLOCS) { return BLOCK_ALLOCATOR_OUT_OF_MEMORY; }
         uint32_t block_index = allocator->free_blocks[allocator->free_offset];
         allocator->free_offset += 1;
         uint32_t head_block_index = allocator->bin_lists[index];
@@ -76,6 +111,7 @@ int block_allocator_insert(block_allocator_t *allocator, uint32_t offset, uint32
         if (mem_prev != BLOCK_ALLOCATOR_UNUSED) { allocator->blocks[mem_prev].mem_next = block_index; }
         if (mem_next != BLOCK_ALLOCATOR_UNUSED) { allocator->blocks[mem_next].mem_prev = block_index; }
         allocator->bin_lists[index] = block_index;
+        if (offset == 0) { allocator->head_block = block_index; }
         return BLOCK_ALLOCATOR_SUCCESS;
 }
 
@@ -106,6 +142,7 @@ void block_allocator_remove(block_allocator_t *allocator, uint32_t block_index) 
 int block_allocator_init(uint32_t size, block_allocator_t *out_allocator) {
         out_allocator->top_bins = 0;
         out_allocator->free_offset = 0;
+        out_allocator->head_block = 0;
         for (int i=0; i < 32; i++) {
                 out_allocator->bottom_bins[i] = 0;
         }
@@ -187,6 +224,17 @@ void block_allocator_free(block_allocator_t *allocator, block_allocator_allocati
         }
         block_allocator_insert(allocator, block.offset, block.size, block.mem_prev, block.mem_next);
 }
+
+void block_allocator_head(block_allocator_t *allocator, block_allocator_block_t *out_block) {
+        *out_block = allocator->blocks[allocator->head_block];
+}
+
+int block_allocator_next(block_allocator_t *allocator, block_allocator_block_t *block, block_allocator_block_t *out_block) {
+        if (block->mem_next == BLOCK_ALLOCATOR_UNUSED) { return BLOCK_ALLOCATOR_OUT_OF_MEMORY; }
+        *out_block = allocator->blocks[block->mem_next];
+        return BLOCK_ALLOCATOR_SUCCESS;
+}
+
 
 #endif // BLOCK_ALLOCATOR_IMPL
 

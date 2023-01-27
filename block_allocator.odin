@@ -1,4 +1,25 @@
 package block_allocator
+// MIT License
+
+// Copyright (c) 2023 Charlie Shenton
+
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
 
 // Allocator based on Sebastian Aaltonen's Offset Allocator: 
 // https://github.com/sebbbi/OffsetAllocator/blob/main/offsetAllocator.cpp
@@ -23,6 +44,7 @@ Block_Allocator :: struct {
 	bottom_bins: [32]u8, // Which if the bottom linear bins are resident in each top bins
 	bin_lists:   [256]u32, // Start index for the linked-list of blocks in each bin
 	blocks:      []Block_Allocator_Block, // Pre-allocated array of block information
+	head_block:  u32, // Index of the block at the start of the memory heap
 	free_blocks: []u32, // Free list of blocks
 	free_offset: u32, // Current free list start index 
 }
@@ -92,6 +114,14 @@ block_alloc :: proc(allocator: ^Block_Allocator, size: u32) -> (alloc: Block_All
 	// Pop the top block off the bin
 	block_index := allocator.bin_lists[index]
 	block := &allocator.blocks[block_index]
+	
+	if block.size < size {
+		ok = false
+		return
+		// fmt.println(block.size, size)
+	}
+	assert(block.size >= size)
+	
 	allocator.bin_lists[index] = block.bin_next
 	if block.bin_next != BLOCK_UNUSED {
 		// We have a new, valid, header block. So we need to link it to this bin
@@ -155,6 +185,17 @@ block_is_used :: proc(block: Block_Allocator_Block) -> bool {
 	return (block.bin_next == BLOCK_UNUSED) && (block.bin_prev == BLOCK_UNUSED)
 }
 
+block_allocator_head :: proc(allocator: ^Block_Allocator) -> (block: Block_Allocator_Block) {
+	return allocator.blocks[allocator.head_block];
+}
+
+block_allocator_next :: proc(allocator: ^Block_Allocator, block: Block_Allocator_Block) -> (Block_Allocator_Block, bool) {
+	if block.mem_next == BLOCK_UNUSED {
+		return {}, false
+	}
+	return allocator.blocks[block.mem_next], true
+}
+
 @(private = "file")
 size_to_bin_index :: proc(size: u32) -> (index, top_index, bottom_index: u32) {
 	// Top index is 1 less than the smallest power of two which contains size
@@ -184,6 +225,7 @@ insert_block :: proc(allocator: ^Block_Allocator, offset, size, mem_prev, mem_ne
 	if mem_prev != BLOCK_UNUSED {allocator.blocks[mem_prev].mem_next = block_index}
 	if mem_next != BLOCK_UNUSED {allocator.blocks[mem_next].mem_prev = block_index}
 	allocator.bin_lists[index] = block_index
+	if offset == 0 { allocator.head_block = block_index }
 	return true
 }
 
